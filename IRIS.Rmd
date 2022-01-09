@@ -1,0 +1,277 @@
+---
+title: "KNN Algorithem in Iris Dataset"
+author: "Ladan Foroughi"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    df_print: paged
+    fig_caption: yes
+  word_document: default
+graphics: yes
+header-includes:
+
+- \usepackage{fontspec}
+- \setmainfont{Arial}
+
+number_sections: yes
+
+geometry: margin = 1.25 cm
+documentclass: article
+fontsize: 11 pt
+
+fig_width: 5 
+fig_height: 3 
+fig_caption: true
+---
+
+\newpage 
+\tableofcontents 
+\newpage
+\listoffigures
+\newpage
+\listoftables
+\newpage
+---
+
+```{r setup , include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center', cache=FALSE, cache.lazy = FALSE)
+options(tinytex.verbose = TRUE)
+knitr::opts_chunk$set(error = TRUE)
+knitr::opts_knit$set(progress = FALSE, verbose = FALSE)
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE)
+options(knitr.duplicate.label = "allow")
+```
+
+# Introduction
+
+The Iris dataset or Fisher's Iris data set is a multivariate data set. This dataset consist of five attributes - sepal length, sepal width, petal length, petal width and species. The algorithm is used for prediction of species is KNN algorithm. 
+
+# Loading Data
+
+The data is uploading from < https://www.kaggle.com/uciml/iris?select=Iris.csv>. 
+All the packaged that used in this work is downloading from <http://cran.us.r-project.org>
+
+```{r required library and loading data , echo=TRUE, include=TRUE}
+if(!require(pacman))install.packages("pacman")
+pacman::p_load(
+  tidyverse,
+  dplyr,
+  ggplot,
+  caret,
+  magnittr,
+  pacman,
+  GGally,
+  knitr,
+  parallel, 
+  rattel,
+  tictoc,
+  gridExtra,
+  kableExtra,
+  readr, 
+  purrr,
+  randomForest,
+  pROC,
+  fastDummies, 
+  rpart.plot,
+  data.table, 
+  reshape2,
+  graphics,
+  corrplot,
+  latexpdf,
+  ReporteRs,
+  tinytex, 
+  latexdiffr,
+  latex2exp,
+  class,
+)
+
+temp <- tempfile()
+url <- "https://www.kaggle.com/uciml/iris"
+download.file(url, temp)
+rawdata <- fread("iris.csv", header=TRUE)
+unlink(temp)
+iris <- rename(rawdata)
+rm(rawdata,temp,url)
+iris <- iris[,-1]
+iris <- iris %>% rename('Petal Length'= PetalLengthCm,
+                'Petal Width' = PetalWidthCm,
+                'Sepal Length'= SepalLengthCm,
+                'Sepal Width' = SepalWidthCm) %>% 
+  mutate(Species = fct_recode(Species,
+                              'setosa' ='Iris-setosa',
+                              'versicolor' = 'Iris-versicolor',
+                              'virginica' = 'Iris-virginica'))
+```
+
+Before we started to analyze the data we need to know the information of dataset.
+
+## First rows 
+
+```{r message=FALSE, warning=FALSE, echo=TRUE, include=TRUE}
+# First rows 
+kable(head(iris),
+      "pandoc", 
+      caption = "The first six rows of data set", 
+      align = "c",
+      font_size = 5)
+
+```
+
+## Last rows 
+
+```{r message=FALSE, warning=FALSE, echo=TRUE, include=TRUE}
+# Last rows 
+kable(tail(iris),
+      "pandoc", 
+      caption = "The last six rows of data set", 
+      align = "c",
+      font_size = 5)
+
+```
+
+## Summary 
+
+```{r message=FALSE, warning=FALSE, echo=TRUE, include=TRUE}
+# Summary
+kable(summary(iris),
+      "pandoc", 
+      caption = "The summary of data set", 
+      align = "c",
+      font_size = 5)
+
+```
+
+## Structure
+
+```{r message=FALSE, warning=FALSE, echo=TRUE, include=TRUE}
+# Structure
+kable(str(iris),
+      "pandoc", 
+      caption = "The structure of data set", 
+      align = "c",
+      font_size = 5)
+
+```
+
+# Data analysis
+
+The histogram of each features for each Species are shown in Figure 1.
+
+```{r Histogram of features for each species, echo=TRUE, include=TRUE, out.width='50%', fig.align='center', fig.cap='Histogram of features for each species'}
+
+iris %>% gather(attributes, value, 1:4) %>% 
+  ggplot(aes(value, fill = attributes)) +
+  geom_histogram(bins = 20,colour="black",alpha = 0.5) +
+  facet_wrap(. ~ Species) +
+  theme_light() +
+  theme(legend.title = element_blank())
+```
+
+The Density of each Species at each of features also is shown in Figure 2.
+
+```{r Density of each species Based on each features, echo=TRUE, include=TRUE, out.width = '50%', fig.align='center', fig.cap= "Density of each species in each features"}
+
+iris %>% gather(attributes, value, 1:4) %>% 
+  ggplot(aes(value, fill = Species)) +
+  geom_density(alpha = 0.5)+ 
+  facet_wrap(. ~ attributes) +
+  theme(legend.title =  element_blank()) +
+  ylab("Density")+
+  theme_light()
+```
+
+The boxplot of each features is shown in Figure 3.
+
+```{r Boxplot of each features, echo=TRUE, include=TRUE, out.width = '50%', fig.align='center', fig.cap= "Boxplot of each features"}
+
+iris %>% gather(attributes , value, 1:4) %>% 
+  ggplot(aes(attributes , value, fill = attributes)) +
+  geom_boxplot() + 
+  theme_light() +
+  theme(legend.title = element_blank(),
+        axis.title.x = element_blank(),
+        legend.position = "bottom")
+```
+
+The Correlation of each features in each Species is shown in Figure 4. The correlation of Sepal length with Petal length and width are high. Also in this figure the correlation in each Species based on each features are shown.  
+
+```{r correlation of each features in each species, echo=TRUE, include=TRUE, out.width = '50%', fig.align='center', fig.cap= "Correlation of each features in each Species"}
+
+ggpairs(cbind(iris, Cluster=as.factor(iris$Species)),
+        columns=1:4, aes(colour=Cluster, alpha=0.5),
+        lower=list(continuous="points"),
+        axisLabels="none", switch="both") +
+  theme_light() 
+```
+
+# Data Prepration
+
+Before we started to do the machine learning, it is betther some modification is done on data.
+
+## Data Normalized
+
+In order to compare of each feature, it is better all features normalized. 
+
+```{r Normalized, echo=TRUE, include=TRUE}
+iris_scaled <- scale(iris[,1:4])
+final_iris <- cbind(iris_scaled,iris[,5])
+
+kable(head(final_iris),
+      "pandoc", 
+      caption = "The first six rows of normalized data", 
+      align = "c",
+      font_size = 5)
+```
+
+## Spliting dataset to train and test 
+
+The data set is splitting to test and train with proporation of 30 to 70 percent.
+
+```{r Spliting data to train and test, echo=TRUE, include=TRUE}
+set.seed(123)
+test_index <- createDataPartition(final_iris$Species,times = 1, p= 0.3, list = FALSE)
+train <- final_iris[-test_index,]
+test <- final_iris[test_index,]
+kable(cbind(trainDimention = dim(train), testDimention = dim(test)),
+      "pandoc", 
+      caption = "The dimention of train and test data set", 
+      align = "c",
+      font_size = 5)
+```
+
+# Training the KNN Algorithm
+
+The K nearest neighbor (KNN) algorithm used to training the train data set. In this algorithm the best K value has to find on training data set. 
+
+```{r The Best K value for KNN algorithm, echo=TRUE, include=TRUE}
+
+fit_knn <- NULL
+Accuracy <- NULL
+
+for (i in 1:20){
+  fit_knn <- knn(train[,1:4],test[,1:4], train$Species, k =i)
+  Accuracy[i] <- mean(fit_knn == test$Species)
+}
+best_k <- which.max(Accuracy)
+best_k
+```
+
+Figure 5 shows the variation of Accuracy versus K value. The best K value is 6 with high Accuracy. The variation in Accuracy vesuse K is related to small size of dataset. Also the variation of Accuracy for K from 1 to 20, is around 5%. 
+
+```{r graph of K value versus Accuracy, echo=TRUE, include=TRUE, out.width= "50%", fig.align='center', fig.cap= " Variation of Accuracy versus K value"}
+k <- 1:20
+Accuracy.df <- data.frame(Accuracy,k)
+
+ggplot(Accuracy.df, aes(k, Accuracy)) + geom_point() + 
+     geom_line(lty = "dotted", color  = "red")
+```
+
+# Evaluating the KNN Algorithm for Test  
+
+The test dataset is validated by KNN algorithm based on best K value around 6. The Accuracy of this algorithm is around 97.8%.  
+
+
+```{r validation of KNN algorithm for test dataset, echo=TRUE, include=TRUE}
+Accuracy[best_k]
+```
+
